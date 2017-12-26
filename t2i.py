@@ -13,6 +13,7 @@ class T2I(object):
         self.padding=None
         self.unknown=None
         self.idict=None
+        self.idict_rev=None #calculated only upon the first .reverse() call
         
         if isinstance(idict,str):
             if idict.endswith(".json"):
@@ -64,6 +65,17 @@ class T2I(object):
         else:
             return list(self(item,string_as_sequence,train) for item in inp)
 
+    def reverse(self,inp):
+        """
+        Same as __call__ but in the opposite direction, i.e. index2string. Caches inversed dictionary on first call.
+        """
+        if self.idict_rev is None:
+            self.idict_rev=dict((v,k) for k,v in self.idict.items())
+        if isinstance(inp,int):
+            return self.idict_rev[inp]
+        else:
+            return list(self.reverse(item) for item in inp)
+
         
 if __name__=="__main__":
     t2i=T2I()
@@ -76,8 +88,12 @@ if __name__=="__main__":
     print()
     print("character")
     print("hi",t2i_char("hi",string_as_sequence=True))
-    print("hi there hi",t2i_char("hi there hi".split(),string_as_sequence=True))
+    c=t2i_char("hi there hi".split(),string_as_sequence=True)
+    print("hi there hi", c)
     print(t2i_char.idict)
     
           
+    print()
+    print("reverse")
+    print(t2i_char.reverse(c))
     
