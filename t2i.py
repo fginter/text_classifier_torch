@@ -12,6 +12,8 @@ class T2I(object):
 
         self.padding=None
         self.unknown=None
+        self.idict=None
+        
         if isinstance(idict,str):
             if idict.endswith(".json"):
                 with open(idict,"rt") as f:
@@ -49,9 +51,10 @@ class T2I(object):
 
     def __call__(self,inp,string_as_sequence=False,train=True):
         """
-        Turn input to indices. If train, new entries are inserted into the dict, otherwise the unknown entry is used.
-        `inp`: by default, a string is translated into single index, a sequence is translated into a list of indices.
-        `string_as_sequence`: if True, tread strings as sequences, effectively producing character level indices
+        Turn input to indices. Works also nested. If train is True, new entries are inserted into the dict, otherwise the unknown entry is used.
+        
+        `inp`: by default, a string is translated into single index, a sequence is translated into a list of outputs of a recursive call to self().
+        `string_as_sequence`: if True, treat strings as sequences, effectively producing character level indices. self(["hi","there"]) will produce [2,3] if False, and [[2, 3], [4, 2, 5, 6, 5]] if True
         """
         if isinstance(inp,str) and (not string_as_sequence or len(inp)==1):
             if train:
