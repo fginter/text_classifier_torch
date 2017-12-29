@@ -54,12 +54,13 @@ if __name__=="__main__":
         network.cuda()
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(network.parameters(), lr=1, momentum=0.9)
+    optimizer = optim.SGD(network.parameters(), lr=0.2, momentum=0.9)
     
     batches=X_t.size(1)
     print("X_t size",X_t.size())
     while True:
         accum_loss=0
+        accum_acc=0
         for batch_idx in range(batches):
             #print("Batch",batch_idx)
             minibatch_t=X_t[:,batch_idx,:]
@@ -74,6 +75,8 @@ if __name__=="__main__":
             outputs=network(minibatch_tv)
             #print("outputs",outputs)
             #print("gold",gold_classes_tv)
+            values,indices=outputs.max(1)
+            accum_acc+=float(torch.sum(indices.eq(gold_classes_tv)))/minibatch_t.size(1)
             loss=criterion(outputs,gold_classes_tv)
             accum_loss+=float(loss)
             loss.backward()
@@ -87,6 +90,8 @@ if __name__=="__main__":
             optimizer.step()
             #break
             #print("linout",network(minibatch_t))
-        print(accum_loss/batches)
+        print("loss",accum_loss/batches)
+        print("train-acc",accum_acc/batches*100)
+        print()
         
 

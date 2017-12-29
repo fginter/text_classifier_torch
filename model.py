@@ -11,7 +11,7 @@ class TClass(nn.Module):
         e_num,e_dim=emb_dims
         self.embedding=nn.Embedding(num_embeddings=e_num,embedding_dim=e_dim,padding_idx=0,sparse=True)
         #self.embedding.weight.data.fill_(0.01)
-        self.bilstm1=nn.LSTM(input_size=self.embedding.embedding_dim,hidden_size=lstm_size,num_layers=2,bidirectional=True)
+        self.bilstm1=nn.LSTM(input_size=self.embedding.embedding_dim,hidden_size=lstm_size,num_layers=1,bidirectional=True)
         self.dense1=nn.Linear(in_features=self.bilstm1.hidden_size*self.bilstm1.num_layers*2,out_features=class_count)
         #self.dense1=nn.Linear(in_features=self.bilstm1.hidden_size,out_features=class_count)
 
@@ -20,13 +20,16 @@ class TClass(nn.Module):
         minibatch_emb=self.embedding(minibatch)
         #print("mbemb",minibatch_emb)
         bilstm_out,(h_n,c_n)=self.bilstm1(minibatch_emb)
-        #print("bilstm_out",bilstm_out)
+        #print("bilstm_out-1",bilstm_out[-1])
         #print("h_n",h_n.size())
         layers_dirs,batch,feats=h_n.size()
         #print("h_n",h_n)
         #print("hn0",h_n[0])
+        steps,batch,feats=bilstm_out.size()
+        #h_n_linin=bilstm_out[steps-1,:,:]
         h_n_linin=h_n.transpose(0,1).contiguous().view(batch,-1)#.contiguous().view(batch,-1)
         #print("h_n_linin",h_n_linin)
+        #print("\n\n\n\n")
         dense_out=F.tanh(self.dense1(h_n_linin))
         #print("dense_out",dense_out)
         return F.softmax(dense_out,dim=1)
