@@ -6,62 +6,56 @@ import config
 
 class TClass(nn.Module):
 
-    def __init__(self,class_count,emb_dims,lstm_size=30):
+    def __init__(self,class_count,wrd_emb_dims,chr_emb_dims,lstm_size=30):
         super(TClass, self).__init__()
-        e_num,e_dim=emb_dims
-        self.embedding=nn.Embedding(num_embeddings=e_num,embedding_dim=e_dim,padding_idx=0,sparse=True)
-        #self.embedding.weight.data.fill_(0.01)
-        self.bilstm1=nn.LSTM(input_size=self.embedding.embedding_dim,hidden_size=lstm_size,num_layers=1,bidirectional=True)
-        self.dense1=nn.Linear(in_features=self.bilstm1.hidden_size*self.bilstm1.num_layers*2,out_features=class_count)
-        #self.dense1=nn.Linear(in_features=self.bilstm1.hidden_size,out_features=class_count)
+        wrd_e_num,wrd_e_dim=wrd_emb_dims
+        chr_r_num,chr_e_dim=chr_emb_dims
+        self.chr_embedding=nn.Embedding(num_embeddings=wrd_e_num,embedding_dim=wrd_e_dim,padding_idx=0,sparse=True)
+        self.wrd_embedding=nn.Embedding(num_embeddings=wrd_e_num,embedding_dim=wrd_e_dim,padding_idx=0,sparse=True)
 
-    def forward(self,minibatch):
-        #print("minibatch",minibatch)
-        minibatch_emb=self.embedding(minibatch)
-        #print("mbemb",minibatch_emb)
-        bilstm_out,(h_n,c_n)=self.bilstm1(minibatch_emb)
-        #print("bilstm_out-1",bilstm_out[-1])
-        #print("h_n",h_n.size())
-        layers_dirs,batch,feats=h_n.size()
-        #print("h_n",h_n)
-        #print("hn0",h_n[0])
-        steps,batch,feats=bilstm_out.size()
-        #h_n_linin=bilstm_out[steps-1,:,:]
-        h_n_linin=h_n.transpose(0,1).contiguous().view(batch,-1)#.contiguous().view(batch,-1)
-        #print("h_n_linin",h_n_linin)
-        #print("\n\n\n\n")
+        self.wrd_bilstm=nn.LSTM(input_size=self.wrd_embedding.embedding_dim,hidden_size=lstm_size,num_layers=1,bidirectional=True)
+
+        self.chr_bilstm=nn.LSTM(input_size=self.chr_embedding.embedding_dim,hidden_size=wrd_e_dim//2,num_layers=1,bidirectional=True)
+        self.chr2wrd_bilstm=nn.LSTM(input_size=self.chr_bilstm.hidden_size*self.chr_bilstm.num_layers*2,hidden_size=lstm_size,num_layers=1,bidirectional=True)
+        
+        self.dense1=nn.Linear(in_features=self.wrd_bilstm.hidden_size*self.wrd_bilstm.num_layers*2,out_features=class_count)
+
+    def forward(self,minibatch_wrd,minibatch_chr):
+        #print("minibatch_chr_size",minibatch_chr.size())
+
+        # First, let us run character-based LSTM on the words
+        # minibatch_chr is word_count x minibatch x char_count
+        # for the char-lstm we need to get it to char_count x wordminibatch
+        wcount,mbatch,ccount=minibatch_chr.size()
+        char_lstm_in_chars=minibatch_chr.view(wcount*mbatch,ccount).transpose(0,1).contiguous()
+        char_lstm_in_embedded=self.chr_embedding(char_lstm_in_chars)
+        #print("char_lstm_in_embedded.size()",char_lstm_in_embedded.size())
+        _,(chr_h_n,_)=self.chr_bilstm(char_lstm_in_embedded)
+        #print("char_h_n.size()",char_h_n.size())
+        #[2, 45000, 30]
+        #  (2,45000,30)  -->  (45000,2,30)
+        chr_h_n_wrd_input=chr_h_n.transpose(0,1).contiguous().view(wcount,mbatch,-1)
+        #print("chr_h_n_wrd_input.size()",chr_h_n_wrd_input.size())
+
+
+        minibatch_wrd_emb=self.wrd_embedding(minibatch_wrd)
+        #print("minibatch_wrd_emb.size()",minibatch_wrd_emb.size())
+
+        chr_h_n_wrd_input_sum=(chr_h_n_wrd_input+minibatch_wrd_emb)/2
+        
+        _,(h_n,_)=self.chr2wrd_bilstm(chr_h_n_wrd_input_sum)
+        _,batch,_=h_n.size()
+        #print("h_n.size()",h_n.size())
+        
+
+        #wrd_bilstm_out,(h_n,c_n)=self.wrd_bilstm(minibatch_wrd_emb)
+        #layers_dirs,batch,feats=h_n.size()
+        #steps,batch,feats=wrd_bilstm_out.size()
+
+        h_n_linin=h_n.transpose(0,1).contiguous().view(batch,-1)
+
         dense_out=F.tanh(self.dense1(h_n_linin))
-        #print("dense_out",dense_out)
         return F.softmax(dense_out,dim=1)
-        
-        
-        
-    #     # 1 input image channel, 6 output channels, 5x5 square convolution
-    #     # kernel
-    #     self.conv1 = nn.Conv2d(1, 6, 5)
-    #     self.conv2 = nn.Conv2d(6, 16, 5)
-    #     # an affine operation: y = Wx + b
-    #     self.fc1 = nn.Linear(16 * 5 * 5, 120)
-    #     self.fc2 = nn.Linear(120, 84)
-    #     self.fc3 = nn.Linear(84, 10)
-
-    # def forward(self, x):
-    #     # Max pooling over a (2, 2) window
-    #     x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
-    #     # If the size is a square you can only specify a single number
-    #     x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-    #     x = x.view(-1, self.num_flat_features(x))
-    #     x = F.relu(self.fc1(x))
-    #     x = F.relu(self.fc2(x))
-    #     x = self.fc3(x)
-    #     return x
-
-    # def num_flat_features(self, x):
-    #     size = x.size()[1:]  # all dimensions except the batch dimension
-    #     num_features = 1
-    #     for s in size:
-    #         num_features *= s
-    #     return num_features
 
 if __name__=="__main__":
     x=TClass(class_count=2)
