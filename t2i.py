@@ -20,6 +20,7 @@ try:
     import torch
 
     def fill_torch(data,tensor,indices,tensor_size):
+        #helper function
         if isinstance(data[0],int): #we hit the bottom, fill the data in
             assert len(tensor_size)==1 #last dimension, filling in the data
             data_v=torch.LongTensor(data[:tensor_size[0]])
@@ -48,6 +49,21 @@ try:
         out=torch.LongTensor(*maxima_list).zero_()
         fill_torch(data,out,[],list(out.size()))
         return out
+
+    def torch_minibatched_2dim(data,batch_size):
+        """
+        data is tensor of (example X sequence_item)
+        returns sequence_item X minibatch X example used by LSTM
+        
+        note - trimmed by batch_size
+        """
+        seq_count,seq_len=data.size()
+        seq_count_mbatch_aligned=(seq_count//batch_size)*batch_size
+        data_batched=data[:seq_count_mbatch_aligned].transpose(0,1).contiguous().view(seq_len,seq_count//batch_size,-1)
+        return data_batched
+
+        
+    
 except:
     pass #no torch, no need for to_torch_long_tensor
         
