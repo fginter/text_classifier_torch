@@ -1,8 +1,10 @@
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
+import torch.nn.utils.rnn as rnn
 import torch.nn.functional as F
 import config
+import sys
 
 class TClass(nn.Module):
 
@@ -17,20 +19,39 @@ class TClass(nn.Module):
 
         self.chr_bilstm=nn.LSTM(input_size=self.chr_embedding.embedding_dim,hidden_size=wrd_e_dim//2,num_layers=1,bidirectional=True)
         self.chr2wrd_bilstm=nn.LSTM(input_size=self.chr_bilstm.hidden_size*self.chr_bilstm.num_layers*2,hidden_size=lstm_size,num_layers=1,bidirectional=True)
-        
-        self.dense1=nn.Linear(in_features=self.wrd_bilstm.hidden_size*self.wrd_bilstm.num_layers*2,out_features=class_count)
 
-    def forward(self,minibatch_wrd,minibatch_chr):
-        #print("minibatch_chr_size",minibatch_chr.size())
+        self.dense1=nn.Linear(in_features=self.wrd_bilstm.hidden_size*self.wrd_bilstm.num_layers*2,out_features=100)
+        self.dense2=nn.Linear(in_features=self.dense1.out_features, out_features=class_count)
 
+    def forward(self,minibatch_wrd,minibatch_wrd_lengths,minibatch_chr,minibatch_chr_lengths):
         # First, let us run character-based LSTM on the words
         # minibatch_chr is word_count x minibatch x char_count
-        # for the char-lstm we need to get it to char_count x wordminibatch
-        wcount,mbatch,ccount=minibatch_chr.size()
-        char_lstm_in_chars=minibatch_chr.view(wcount*mbatch,ccount).transpose(0,1).contiguous()
-        char_lstm_in_embedded=self.chr_embedding(char_lstm_in_chars)
-        #print("char_lstm_in_embedded.size()",char_lstm_in_embedded.size())
-        _,(chr_h_n,_)=self.chr_bilstm(char_lstm_in_embedded)
+        # for the char-lstm we need to get it to char_count x word
+        wcount,mbatch,ccount=minibatch_chr.size()  # word X sentence X character
+
+        # character x word
+        char_lstm_in=minibatch_chr.contiguous().view(wcount*mbatch,ccount).transpose(0,1).contiguous()
+        # length
+        char_lstm_in_lens=minibatch_chr_lengths.contiguous().view(wcount*mbatch)
+        # length                 index
+        char_lstm_in_lens_sorted,char_lstm_in_lens_sorted_idx=torch.sort(char_lstm_in_lens,descending=True)
+        #print("char_lstm_in_lens_sorted",char_lstm_in_lens_sorted,"char_lstm_in_lens_sorted_idx",char_lstm_in_lens_sorted_idx)
+
+        # number scalar
+        nonzero_words_count=char_lstm_in_lens_sorted.squeeze().nonzero().size()[0]
+
+        # character x word  ... sorted from longest to shortest word, only nonzero length
+        char_lstm_in_sorted=char_lstm_in[:,char_lstm_in_lens_sorted_idx[:nonzero_words_count]]
+        # length ... only nonzero
+        char_lstm_in_lens_sorted=char_lstm_in_lens_sorted.squeeze()[:nonzero_words_count]
+        # character x word x embeddingdim
+        char_lstm_in_sorted_embedded=self.chr_embedding(char_lstm_in_sorted)
+        print("input",char_lstm_in_sorted_embedded,"lengths",char_lstm_in_lens_sorted.squeeze())
+        char_lstm_in_sorted_packed=rnn.pack_padded_sequence(input=char_lstm_in_sorted_embedded,lengths=list(char_lstm_in_lens_sorted.data))
+        print("char_lstm_in_sorted_packed",char_lstm_in_sorted_packed)
+        
+        _,(chr_h_n,_)=self.chr_bilstm(char_lstm_in_sorted_packed)
+        print("chr_h_n",chr_h_n)
         #print("char_h_n.size()",char_h_n.size())
         #[2, 45000, 30]
         #  (2,45000,30)  -->  (45000,2,30)
@@ -41,7 +62,7 @@ class TClass(nn.Module):
         minibatch_wrd_emb=self.wrd_embedding(minibatch_wrd)
         #print("minibatch_wrd_emb.size()",minibatch_wrd_emb.size())
 
-        chr_h_n_wrd_input_sum=(chr_h_n_wrd_input+minibatch_wrd_emb)/2
+        chr_h_n_wrd_input_sum=(chr_h_n_wrd_input)#+minibatch_wrd_emb)/
         
         _,(h_n,_)=self.chr2wrd_bilstm(chr_h_n_wrd_input_sum)
         _,batch,_=h_n.size()
@@ -53,9 +74,10 @@ class TClass(nn.Module):
         #steps,batch,feats=wrd_bilstm_out.size()
 
         h_n_linin=h_n.transpose(0,1).contiguous().view(batch,-1)
-
-        dense_out=F.tanh(self.dense1(h_n_linin))
-        return F.softmax(dense_out,dim=1)
+        dense1_out=F.tanh(self.dense1(h_n_linin))
+        dense2_out=self.dense2(dense1_out)
+        return dense2_out
+        
 
 if __name__=="__main__":
     x=TClass(class_count=2)

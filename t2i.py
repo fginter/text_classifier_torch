@@ -19,16 +19,19 @@ def maxima(data,level,maxima_list):
 try:
     import torch
 
-    def fill_torch(data,tensor,indices,tensor_size):
+    def fill_torch(data,tensor,len_tensor,indices,tensor_size):
         #helper function
+        # tensor -> data goes here, padded with zeros
+        # len_tensor -> lengths go here
         if isinstance(data[0],int): #we hit the bottom, fill the data in
             assert len(tensor_size)==1 #last dimension, filling in the data
             data_v=torch.LongTensor(data[:tensor_size[0]])
             target=tensor[tuple(indices)]
             target[:data_v.size(0)]=data_v
+            len_tensor[tuple(indices)]=data_v.size(0)
         else: #recursive call
             for i,d in itertools.islice(enumerate(data),tensor_size[0]):
-                fill_torch(d,tensor,indices+[i],tensor_size[1:])
+                fill_torch(d,tensor,len_tensor,indices+[i],tensor_size[1:])
 
     def to_torch_long_tensor(data,max_seq_length=0):
         """
@@ -47,8 +50,9 @@ try:
             assert len(max_seq_length)==len(maxima_list)-1, "If max_seq_length is given as a list, it should have length of {} for this data, which has dimensionality {}.".format(len(maxima_list)-1,maxima_list)
             maxima_list=maxima_list[0:1]+list(min(actual,maximum) for actual,maximum in zip(maxima_list[1:],max_seq_length))
         out=torch.LongTensor(*maxima_list).zero_()
-        fill_torch(data,out,[],list(out.size()))
-        return out
+        out_len=torch.LongTensor(*maxima_list[:-1]).zero_() #the lengths are tensor of one less dimensionality
+        fill_torch(data,out,out_len,[],list(out.size()))
+        return out,out_len
 
     def torch_minibatched_2dim(data,batch_size):
         """
@@ -60,6 +64,18 @@ try:
         seq_count,seq_len=data.size()
         seq_count_mbatch_aligned=(seq_count//batch_size)*batch_size
         data_batched=data[:seq_count_mbatch_aligned].transpose(0,1).contiguous().view(seq_len,seq_count//batch_size,-1)
+        return data_batched
+
+    def torch_minibatched_1dim(data,batch_size):
+        """
+        data is tensor of (example)
+        returns item X minibatch
+        
+        note - trimmed by batch_size
+        """
+        seq_count=data.size()[0]
+        seq_count_mbatch_aligned=(seq_count//batch_size)*batch_size
+        data_batched=data[:seq_count_mbatch_aligned].view(-1,seq_count//batch_size)
         return data_batched
 
         
